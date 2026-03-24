@@ -120,7 +120,6 @@ Decision by ML Lead, max 4-hour validation window.
 
 ## Team Ownership
 
-> Roles are fixed for sprint duration unless lead approves a change.
 
 ### ML Lead
 - Own architecture and checkpoints
