@@ -12,25 +12,24 @@ Autonomous systems need to predict not only where people are now, but where they
 Given 2 seconds of observed trajectory, we predict 3 seconds into the future with **multimodal outputs** (3 possible futures), because human behavior is uncertain.
 
 This repo is the team’s **single source of truth** for:
-- technical decisions,
-- daily execution,
-- ownership,
-- coding standards,
-- GitHub workflow.
+- technical decisions
+- daily execution and ownership
+- coding standards
+- GitHub workflow
 
 ---
 
 ## Problem Definition
 
 ### Input
-- Observed trajectory: `[(x1,y1), ... , (x8,y8)]`
-- 2 seconds at 4Hz = 8 timesteps
-- Features per timestep: `(x, y, dx, dy)` → shape `[8, 4]`
+- Observed trajectory: `[(x1,y1), ... , (x4,y4)]`
+- 2 seconds at native 2Hz = 4 timesteps
+- Features per timestep: `(x, y, dx, dy)` → shape `[4, 4]`
 
 ### Output
 - `K=3` predicted trajectories
-- Each trajectory: 12 timesteps (3 seconds at 4Hz)
-- Output shape: `[3, 12, 2]` + confidence scores `[3]`
+- Each trajectory: 6 timesteps (3 seconds at native 2Hz)
+- Output shape: `[3, 6, 2]` + confidence scores `[3]`
 
 ### Target agents
 - ✅ Pedestrian
@@ -44,9 +43,9 @@ This repo is the team’s **single source of truth** for:
 | Component | Tool | Version |
 |---|---|---|
 | Language | Python | 3.10 |
-| Deep Learning | PyTorch | 2.11.0 |
-| Dataset SDK | nuscenes-devkit | 1.2.0 |
-| Experiment Tracking | Weights & Biases | 0.25.1 |
+| DL Framework | PyTorch | 2.11.0 |
+| Data SDK | nuscenes-devkit | 1.2.0 |
+| Exp Tracking | Weights & Biases | 0.25.1 |
 | Visualization | Matplotlib | 3.10.8 |
 | Environment (local) | Conda | via environment.yml |
 | Environment (Kaggle) | pip | via requirements.txt |
@@ -54,27 +53,27 @@ This repo is the team’s **single source of truth** for:
 | Compute (training) | Kaggle (GPU T4) | primary |
 | Compute (local) | VSCode + Conda | Data Engineer only |
 
-> **Rule:** stack decisions are fixed for sprint execution. No tech pivots after Day 1 unless explicitly approved.
+> **Rule:** Stack decisions are fixed for sprint execution. No tech pivots after Day 1 unless explicitly approved.
 
 ---
 
 ## Non-Negotiable Data Decisions
 
-These must be implemented exactly to avoid leakage and ensure reproducibility:
+These must be implemented exactly to avoid leakage, prevent mode collapse, and ensure the model learns actual kinematics:
 
-- Sampling rate: **4 Hz** (linear interpolation from nuScenes 2Hz)
-- Input window: **8 timesteps (2s)**
-- Prediction window: **12 timesteps (3s)**
-- Normalization: **agent-centric** (last observed position = `(0,0)`)
-- Features: append velocity `(dx, dy)` → input `[8,4]`
-- Split: **scene-level only** (never frame-level)
-- Ratio: **70/15/15** train/val/test
+- **Sampling rate:** **2 Hz** (Native nuScenes rate. Do NOT interpolate to 4Hz. It creates fake data and exacerbates vanishing gradients).
+- **Input window:** **4 timesteps (2s)**
+- **Prediction window:** **6 timesteps (3s)**
+- **Normalization:** **Translation AND Rotation** (Translate last observed position to `(0,0)`, AND rotate so the agent's last known heading points along the positive X-axis. This makes the model rotation-invariant and prevents the model wasting capacity learning basic geometry).
+- **Features:** Append velocity `(dx, dy)` → input `[4,4]`
+- **Split:** **Scene-level only** (never frame-level)
+- **Ratio:** **70/15/15** train/val/test
 
 ---
 
 ## Functional Requirements
 
-### Must Have (qualification-critical)
+### Must Have (Qualification-Critical)
 - Temporal model (LSTM/GRU/Transformer)
 - Social context handling
 - Multimodal output (`K >= 3`)
@@ -97,123 +96,57 @@ These must be implemented exactly to avoid leakage and ensure reproducibility:
 
 ---
 
-## Model Plan (by Day)
-
-### Baseline (Day 2 target)
-- Encoder: LSTM (`hidden=128`, `layers=2`, `dropout=0.1`)
-- Decoder: 3-mode decoding (`K=3`)
-- Loss: Winner-Takes-All (WTA)
-- Output: `[batch, 3, 12, 2]` + `[batch, 3]` confidences
-
-### Improved (Day 4–5 target)
-- Add social pooling:
-  - neighbors within 2m radius
-  - pool hidden states (max/sum)
-  - concat pooled social vector before decode
-
-### Final optional upgrade (Day 6 only if ahead)
-Choose one:
-- **Option A:** small Transformer encoder (4 heads, 2 layers, d_model=128)
-- **Option B:** Temporal Conv encoder  
-Decision by ML Lead, max 4-hour validation window.
-
----
-
-## Team Ownership
-
+## Team Ownership & Explicit Tasks
 
 ### ML Lead
-- Own architecture and checkpoints
-- Baseline by Day 2
-- WTA loss
-- Social pooling integration
-- Hyperparameter tuning
-- Model card + architecture decisions
+**Goal:** Own the architecture, loss functions, and final checkpoints.
+- **Day 1-2:** Build the LSTM encoder/decoder baseline accepting `[batch, 4, 4]` and outputting `[batch, 3, 6, 2]`. 
+- **CRITICAL CORRECTION (WTA Loss):** Do *not* implement a naive Winner-Takes-All loss, or two of your heads will die by Epoch 2. Implement a **warmup phase**: for the first 10 epochs, backpropagate loss to ALL 3 heads equally to keep them alive, then transition to strict WTA. 5 epochs is not enough warmup — heads can still die on smaller datasets.
+- **Day 4:** Integrate social pooling (concat max/sum pooled neighbor hidden states).
+- **Day 5:** Hyperparameter tuning (dropout, LR scheduling).
 
 ### Data Engineer
-- nuScenes raw → clean DataLoader
-- Track extraction for ped/cyclist
-- Agent-centric normalization
-- Velocity features
-- Scene-level split + leakage checks
-- Neighbor extraction for social pooling
-- Data pipeline documentation
+**Goal:** Own the data pipeline from raw nuScenes to PyTorch DataLoader. 
+- **Day 1 (Extraction):** Run the dedicated extraction script to pull contiguous pedestrian/cyclist tracks into a clean CSV. 
+- **Day 1-2 (Normalization):** Implement the Dataset class. You MUST implement both translation to `(0,0)` AND rotation to the Y-axis. 
+- **Day 1 (evening):** Append `(dx, dy)` velocity features. This must be done on Day 1 — the ML Lead's baseline expects input shape [batch, 4, 4] from Day 2 onwards. Velocity at frame 0 is always (0, 0), never NaN.
+- **Day 3:** Enforce the 70/15/15 scene-level split and mathematically prove to the team there is no data leakage.
+- **Day 4:** Build the neighbor extraction logic (agents within 2m) for the ML Lead's social pooling.
 
 ### ML Engineer #2 (Experiment Tracker)
-- ADE/FDE implementations + unit tests
-- W&B setup and logging
-- Training loop scaffold
-- Ablations (K=1 vs K=3, with/without velocity/social)
-- Multimodal diversity checks
-- Final results table
+**Goal:** Own the metrics, experiment tracking, and scientific rigor.
+- **Day 1:** Write the ADE and FDE functions. Write unit tests passing dummy tensors through them to prove they calculate distance correctly. Set up W&B.
+- **Day 3:** Monitor for mode collapse. Plot the K=3 outputs on a graph and visually confirm the model is actually predicting diverse futures. If they are identical, flag the ML Lead immediately. 
+- **Day 4-6:** Run ablations (with/without velocity, with/without social) and build the final results comparison table.
 
 ### Integration & Demo Engineer
-- `inference.py` ownership (must run daily)
-- Visualization pipeline
-- Repo setup + `requirements.txt`
-- Final demo on 5 curated scenes
-- Reproduction-ready README
-- Ensure end-to-end runtime <30s
+**Goal:** Own the end-to-end pipeline and what the judges actually see.
+- **Day 1:** Set up repo structure, `requirements.txt`, and verify the empty train loop runs on Kaggle and local.
+- **Day 2-7:** Own `inference.py`. Run it daily. If the ML Lead breaks inference, force a fix.
+- **Day 3 (Visualizer):** Build the plotting tool. *Warning:* Because the Data Engineer rotated the inputs, you must reverse the rotation during inference so the predictions map correctly back onto the nuScenes visualizer.
+- **Day 6:** Build the final 30-second demo on 5 curated scenes. Make it look professional.
 
 ---
 
 ## 7-Day Execution Schedule
 
-### Day 1 — Foundation
-- Data extraction pipeline
-- Dataset class + tensor shape validation
-- ADE/FDE + unit tests
-- Repo scaffold runs clean
-
-**Checkpoint:** anyone can clone and run `python train.py`
-
-### Day 2 — Baseline running
-- LSTM + K=3 + WTA training
-- No leakage verified
-- First 10-epoch run logged
-- `inference.py` outputs 3 trajectories
-
-**Checkpoint:** first val ADE/FDE numbers available
-
-### Day 3 — E2E lock (hard deadline)
-- Stable longer training
-- LR trials
-- Velocity features integrated
-- K=1 vs K=3 ablation
-- Visualization screenshots
-
-**Checkpoint:** full fallback submission pipeline is ready
-
-### Day 4 — Social context
-- Social pooling integrated + tested
-- Multi-agent inference supported
-- Compare with vanilla baseline
-
-### Day 5 — Tuning only
-- No new major features
-- Optimize ADE/FDE
-- Failure case analysis
-- Stress test inference edge cases
-
-### Day 6 — Demo polish
-- Model card, pipeline docs, final comparison table
-- Demo polished on 5 scenes, under 30s
-
-### Day 7 — Buffer + submit
-- Fix breakages, freeze scope
-- Final submission package
-- Validate fallback checkpoint
+- **Day 1 — Foundation:** Data extraction pipeline, Dataset class + tensor shape validation, ADE/FDE unit tests. Repo scaffold runs clean. *(Checkpoint: anyone can clone and run `train.py`)*
+- **Day 2 — Baseline:** LSTM + K=3 + WTA (with warmup) training. First validation ADE/FDE numbers available.
+- **Day 3 — E2E Lock (HARD DEADLINE):** Stable training, velocity integrated, K=1 vs K=3 ablation, visual check. *(Checkpoint: Fallback submission ready)*
+- **Day 4 — Social Context:** Social pooling integrated + tested. Multi-agent inference supported.
+- **Day 5 — Tuning Only:** No new major features. Optimize ADE/FDE, failure case analysis.
+- **Day 6 — Demo Polish:** Model card, pipeline docs, final comparison table, 30s demo polished on 5 scenes.
+- **Day 7 — Buffer + Submit:** Fix breakages, freeze scope, prepare final submission package.
 
 ---
 
 ## Metrics and Targets
 
-### Reported Metrics
-- **ADE**: average displacement error over trajectory
-- **FDE**: final-point displacement error
-- For multimodal (`K=3`): report **minADE** and **minFDE**
+- **ADE**: Average Euclidean distance across the 3-second horizon.
+- **FDE**: Euclidean distance of the final 3-second endpoint.
+- For multimodal (`K=3`), we report **minADE** and **minFDE**.
 
-### Qualification Targets
+**Qualification Target:**
 | Metric | Unacceptable | Qualifies (Target) | Competitive |
 |---|---:|---:|---:|
 | ADE (3s) | > 2.0m | 1.0–1.5m | < 0.8m |
@@ -224,17 +157,15 @@ Decision by ML Lead, max 4-hour validation window.
 ## Definition of Done
 
 Project is done when all are true:
-
-- 3 distinct plausible trajectory predictions per agent
-- Val ADE < 1.5m
-- Val FDE < 3.0m
-- Social context implemented + documented
-- Reproducible training with fixed seed
-- Inference pipeline works end-to-end
-- Demo runs on 5 real scenes in <30s
-- README is fully reproducible for newcomers
-- Code merged into runnable `main`
-- Baseline vs Improved vs Final comparison table completed
+1. 3 distinct plausible trajectory predictions per agent
+2. Val ADE < 1.5m, Val FDE < 3.0m
+3. Social context implemented + documented
+4. Reproducible training with fixed seed
+5. Inference pipeline works end-to-end
+6. Demo runs on 5 real scenes in <30s
+7. README is fully reproducible for newcomers
+8. Code merged into runnable `main`
+9. Baseline vs Improved vs Final comparison table completed
 
 ---
 
@@ -258,7 +189,7 @@ TrajectoryPredict/
 │   └── logs/
 ├── train.py
 ├── inference.py
-├── env.yml
+├── environment.yml
 ├── requirements.txt
 └── README.md
 ```

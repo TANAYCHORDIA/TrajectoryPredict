@@ -1,0 +1,68 @@
+copilot.md
+
+Create a .gitignore file in the root of the repository with the following content:
+
+# ─────────────────────────────────────────────────────────────────
+# TrajectoryPredict — .gitignore
+# ─────────────────────────────────────────────────────────────────
+
+# ── Dataset (never commit raw or processed data) ──────────────────
+data/raw/
+data/processed/
+data/external/
+*.json
+!src/**/*.json
+!tests/**/*.json
+
+# ── Model Checkpoints (can be hundreds of MBs) ────────────────────
+outputs/checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# ── Logs and Plots ────────────────────────────────────────────────
+outputs/logs/
+outputs/plots/
+*.log
+wandb/
+
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Environments ──────────────────────────────────────────────────
+.env
+.venv
+env/
+venv/
+*.env
+
+# ── Jupyter Notebooks ─────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── VSCode ────────────────────────────────────────────────────────
+.vscode/
+*.code-workspace
+
+# ── MacOS ─────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ── Windows ───────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+
+# ── Secrets (critical — never commit these) ───────────────────────
+.env
+*.key
+secrets.yaml
+wandb_key.txt
+kaggle.json
