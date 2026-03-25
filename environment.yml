@@ -1,0 +1,27 @@
+# TrajectoryPredict — Local development environment (Data Engineer / VSCode)
+# ─────────────────────────────────────────────────────────────────
+# This file is for LOCAL SETUP ONLY.
+# Kaggle users do not use this file — use requirements.txt instead.
+#
+# Before running:
+#   1. Run `nvidia-smi` in terminal
+#   2. Check CUDA version in top-right of output
+#   3. If CUDA is 11.x → change pytorch-cuda=12.1 to pytorch-cuda=11.8
+#   4. Then run: conda env create -f environment.yml
+# ─────────────────────────────────────────────────────────────────
+
+name: trajpredict
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch=2.11.0
+  - torchvision=0.26.0
+  - torchaudio=2.11.0
+  - pytorch-cuda=12.1
+  - numpy=1.26.4
+  - pip
+  - pip:
+      - -r requirements.txt
