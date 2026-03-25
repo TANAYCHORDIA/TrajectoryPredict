@@ -43,15 +43,16 @@ This repo is the team’s **single source of truth** for:
 
 | Component | Tool | Version |
 |---|---|---|
-| Language | Python | 3.10+ |
-| Deep Learning | PyTorch | 2.x |
-| Dataset SDK | nuscenes-devkit | latest |
-| Experiment Tracking | Weights & Biases | free tier |
-| Visualization | Matplotlib | 3.x |
-| Environment | conda / venv | team choice |
+| Language | Python | 3.10 |
+| Deep Learning | PyTorch | 2.11.0 |
+| Dataset SDK | nuscenes-devkit | 1.2.0 |
+| Experiment Tracking | Weights & Biases | 0.25.1 |
+| Visualization | Matplotlib | 3.10.8 |
+| Environment (local) | Conda | via environment.yml |
+| Environment (Kaggle) | pip | via requirements.txt |
 | Version Control | Git + GitHub | latest |
-| Packaging | `env.yml` (+ optional `requirements.txt`) | required |
-| Compute fallback | Kaggle / Colab Pro | as needed |
+| Compute (training) | Kaggle (GPU T4) | primary |
+| Compute (local) | VSCode + Conda | Data Engineer only |
 
 > **Rule:** stack decisions are fixed for sprint execution. No tech pivots after Day 1 unless explicitly approved.
 
@@ -258,50 +259,102 @@ TrajectoryPredict/
 ├── train.py
 ├── inference.py
 ├── env.yml
-├── requirments.txt
+├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## Setup and Usage
+## Environment Setup
 
-### 1) Clone repository
-```bash
-git clone <repo-url>
-cd TrajectoryPredict
+### Kaggle — ML Training (ML Lead, ML #2, Integration Engineer)
+
+1. Upload the dataset to your Kaggle notebook or use the nuScenes dataset from Kaggle's public datasets
+2. In your Kaggle notebook, run the following in the first cell:
+```python
+  import torch
+  print(torch.__version__)        # confirm version
+  print(torch.cuda.is_available()) # must print True — if False, go to Settings → Accelerator → GPU T4
 ```
 
-### 2) Create Conda environment (recommended)
+3. Install project dependencies:
 ```bash
-conda env create -f env.yml
+  pip install -r requirements.txt
+```
+
+4. Do NOT install torch separately — Kaggle pre-installs it with CUDA. Reinstalling will break GPU support silently.
+
+---
+
+### Local / VSCode — Data Engineering & Demo (Data Engineer)
+
+**Prerequisites:** Anaconda or Miniconda installed. CUDA-capable GPU recommended but not required for data work.
+
+**First time setup:**
+```bash
+# 1. Clone the repo
+git clone 
+cd trajectorypredict
+
+# 2. Check your CUDA version — look at top right of output
+nvidia-smi
+
+# 3. If CUDA version is 11.x, open environment.yml and change
+#    pytorch-cuda=12.1  →  pytorch-cuda=11.8
+#    before running the next command
+
+# 4. Create and activate the environment
+conda env create -f environment.yml
+
+The environment.yml file pins the following:
+- Python 3.10
+- PyTorch 2.11.0 with CUDA support
+- torchvision 0.26.0
+- torchaudio 2.11.0
+- All pip packages from requirements.txt (installed automatically)
+
 conda activate trajpredict
-python -c "import torch; print(torch.__version__)"
+
+# 5. Verify torch and CUDA are working
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
 ```
 
-For dependency notes and quick checks, see `requirments.txt`.
+**VSCode interpreter setup:**
+- Open VSCode
+- Bottom left corner → click the Python interpreter selector
+- Choose the interpreter that shows `trajpredict` in the path
+- If it doesn't appear, press `Ctrl+Shift+P` → `Python: Select Interpreter` → `Enter interpreter path` → paste the output of `conda run -n trajpredict which python`
 
-### 3) Optional venv setup (if not using Conda)
+**Subsequent runs:**
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+conda activate trajpredict
+# then run whatever script you need
 ```
 
-### 4) Train baseline
-```bash
-python train.py
-```
+---
 
-### 5) Run inference
-```bash
-python inference.py
-```
+### Adding New Dependencies
 
-### 6) Run tests
+If you need to add a package during the sprint:
+
+1. Add it to `requirements.txt` with a pinned version
+2. Kaggle users run `pip install <package>==version` in their notebook
+3. Local users run `pip install <package>==version` inside the active conda env
+4. Commit the updated `requirements.txt` — never commit environment changes without updating this file
+
+---
+
+### Known Issues
+
+**nuScenes map rendering error on local setup:**
+If you see a shapely or descartes related error when rendering nuScenes maps, run:
 ```bash
-pytest -q
+pip install shapely==2.0.7 descartes==1.1.0
 ```
+Both are already in requirements.txt but some systems need a manual reinstall.
+
+**wandb login:**
+First time using wandb, run `wandb login` and paste your API key from wandb.ai/authorize. This is a one-time step per machine.
 
 ---
 

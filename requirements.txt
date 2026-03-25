@@ -1,0 +1,35 @@
+# TrajectoryPredict — pip dependencies
+# ─────────────────────────────────────────────────────────────────
+# KAGGLE USERS (ML Lead, ML #2, Integration Engineer):
+#   Run in notebook cell: !pip install -r requirements.txt
+#   Do NOT install torch — Kaggle pre-installs it with CUDA support.
+#   Reinstalling torch here will silently break GPU access.
+#
+# LOCAL / VSCODE USERS (Data Engineer):
+#   Use environment.yml instead — torch is managed there.
+#   conda env create -f environment.yml
+#   conda activate trajpredict
+# ─────────────────────────────────────────────────────────────────
+
+# Data
+nuscenes-devkit==1.2.0
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.13.1
+
+# ML Utilities
+scikit-learn==1.8.0
+tqdm==4.67.3
+
+# Visualization
+matplotlib==3.10.8
+opencv-python-headless==4.11.0.86
+pillow==12.1.1
+
+# Experiment Tracking
+wandb==0.25.1
+
+# nuScenes internal dependencies (pinned for stability)
+pyquaternion==0.9.9
+shapely==2.0.7
+descartes==1.1.0
