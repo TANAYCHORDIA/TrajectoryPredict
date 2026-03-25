@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from dataset import TrajectoryDataset
 from model import TrajectoryPredictor
 from utils import set_seed, get_device, wta_loss
+from metrics import minade_minfde
 
 
 OBS_TRAIN_PATH = "data/processed/obs_train.npy"
@@ -30,8 +31,11 @@ def train_one_epoch(model, loader, optimizer, device):
         preds = model(obs)
         loss = wta_loss(preds, fut)
         loss.backward()
-        optimizer.step()
 
+        # Prevent unstable gradients
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+        optimizer.step()
         total_loss += loss.item()
 
     return total_loss / len(loader)
@@ -40,6 +44,9 @@ def train_one_epoch(model, loader, optimizer, device):
 def validate_one_epoch(model, loader, device):
     model.eval()
     total_loss = 0.0
+    total_ade = 0.0
+    total_fde = 0.0
+    total_samples = 0
 
     with torch.no_grad():
         for obs, fut in loader:
@@ -48,10 +55,22 @@ def validate_one_epoch(model, loader, device):
 
             preds = model(obs)
             loss = wta_loss(preds, fut)
-
             total_loss += loss.item()
 
-    return total_loss / len(loader)
+            batch_size = obs.size(0)
+
+            for i in range(batch_size):
+                min_ade, min_fde = minade_minfde(preds[i], fut[i])
+                total_ade += float(min_ade)
+                total_fde += float(min_fde)
+
+            total_samples += batch_size
+
+    avg_loss = total_loss / len(loader)
+    avg_ade = total_ade / total_samples
+    avg_fde = total_fde / total_samples
+
+    return avg_loss, avg_ade, avg_fde
 
 
 def main():
@@ -59,7 +78,8 @@ def main():
     device = get_device()
     print("Using device:", device)
 
-    # Check if processed files exist
+    os.makedirs("outputs/checkpoints", exist_ok=True)
+
     required_files = [
         OBS_TRAIN_PATH, FUT_TRAIN_PATH,
         OBS_VAL_PATH, FUT_VAL_PATH
@@ -84,9 +104,15 @@ def main():
 
     for epoch in range(EPOCHS):
         train_loss = train_one_epoch(model, train_loader, optimizer, device)
-        val_loss = validate_one_epoch(model, val_loader, device)
+        val_loss, val_ade, val_fde = validate_one_epoch(model, val_loader, device)
 
-        print(f"Epoch {epoch+1}/{EPOCHS} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+        print(
+            f"Epoch {epoch+1}/{EPOCHS} | "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | "
+            f"Val ADE: {val_ade:.4f} | "
+            f"Val FDE: {val_fde:.4f}"
+        )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
