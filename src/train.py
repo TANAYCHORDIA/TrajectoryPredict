@@ -117,18 +117,25 @@ def train_one_epoch(
     model.train()
     total_loss = 0.0
 
-    for obs, fut in loader:
+    for batch_idx, (obs, fut) in enumerate(loader):
         obs = obs.to(device)
         fut = fut.to(device)
 
         optimizer.zero_grad()
+
         preds = model(obs)
         loss = wta_loss(preds, fut)
+
         loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        # 🔥 gradient clipping + logging
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         optimizer.step()
+
+        # optional debug print (can remove later)
+        print(f"Batch {batch_idx+1}: Loss={loss.item():.4f}, Grad Norm={grad_norm:.4f}")
+
         total_loss += loss.item()
 
     return total_loss / len(loader)
