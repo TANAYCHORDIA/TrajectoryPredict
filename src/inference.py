@@ -96,7 +96,7 @@ def run_inference(
     obs_batch = obs.unsqueeze(0).to(device)
 
     with torch.no_grad():
-        preds = model(obs_batch).squeeze(0).cpu()  # [3, 12, 2]
+        preds = model(obs_batch).squeeze(0).cpu()  # [3, 6, 2]
 
     min_ade, min_fde = minade_minfde(preds, fut)
 

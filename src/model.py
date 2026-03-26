@@ -8,7 +8,7 @@ class TrajectoryPredictor(nn.Module):
         input_dim=4,
         hidden_size=128,
         num_layers=2,
-        pred_len=12,
+        pred_len=6,
         num_modes=3
     ):
         super().__init__()
@@ -35,24 +35,24 @@ class TrajectoryPredictor(nn.Module):
 
     def forward(self, x):
         """
-        x: [B, 8, 4]
-        returns: [B, 3, 12, 2]
+        x: [B, 4, 4]
+        returns: [B, 3, 6, 2]
         """
         _, (h_n, _) = self.encoder(x)
         final_hidden = h_n[-1]  # [B, hidden_size]
 
         outputs = []
         for head in self.heads:
-            out = head(final_hidden)               # [B, 24]
-            out = out.view(-1, self.pred_len, 2)  # [B, 12, 2]
+            out = head(final_hidden)               # [B, 12]
+            out = out.view(-1, self.pred_len, 2)  # [B, 6, 2]
             outputs.append(out)
 
-        preds = torch.stack(outputs, dim=1)       # [B, 3, 12, 2]
+        preds = torch.stack(outputs, dim=1)       # [B, 3, 6, 2]
         return preds
 
 
 if __name__ == "__main__":
     model = TrajectoryPredictor()
-    x = torch.randn(5, 8, 4)
+    x = torch.randn(5, 4, 4)
     y = model(x)
     print("Output shape:", y.shape)
