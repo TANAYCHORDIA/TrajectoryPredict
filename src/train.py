@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import TrajectoryDataset
+
 from metrics import minade_minfde
 from model import TrajectoryPredictor
 from utils import get_device, set_seed, wta_loss
@@ -89,21 +89,29 @@ def validate_required_files(paths: list[Path]) -> None:
         )
 
 
-def create_dataloaders(args: argparse.Namespace) -> tuple[DataLoader, DataLoader]:
-    """Build training and validation dataloaders."""
-    train_dataset = TrajectoryDataset(str(args.obs_train), str(args.fut_train))
-    val_dataset = TrajectoryDataset(str(args.obs_val), str(args.fut_val))
+def create_dataloaders(args):
+    import numpy as np
+    from torch.utils.data import TensorDataset, DataLoader
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
+    obs_train = np.load(args.obs_train)
+    fut_train = np.load(args.fut_train)
+
+    obs_val = np.load(args.obs_val)
+    fut_val = np.load(args.fut_val)
+
+    train_dataset = TensorDataset(
+        torch.tensor(obs_train, dtype=torch.float32),
+        torch.tensor(fut_train, dtype=torch.float32)
     )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
+
+    val_dataset = TensorDataset(
+        torch.tensor(obs_val, dtype=torch.float32),
+        torch.tensor(fut_val, dtype=torch.float32)
     )
+
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+
     return train_loader, val_loader
 
 
