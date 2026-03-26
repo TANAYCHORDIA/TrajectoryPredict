@@ -13,7 +13,8 @@ data/external/
 *.json
 !src/**/*.json
 !tests/**/*.json
-
+*.csv
+*.npy
 # ── Model Checkpoints (can be hundreds of MBs) ────────────────────
 outputs/checkpoints/
 *.pt

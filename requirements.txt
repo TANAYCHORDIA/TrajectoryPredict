@@ -1,4 +1,3 @@
-
 # TrajectoryPredict — pip dependencies
 # ─────────────────────────────────────────────────────────────────
 # KAGGLE USERS (ML Lead, ML #2, Integration Engineer):
@@ -7,9 +6,12 @@
 #   Reinstalling torch here will silently break GPU access.
 #
 # LOCAL / VSCODE USERS (Data Engineer):
-#   Use environment.yml instead — torch is managed there.
-#   conda env create -f environment.yml
-#   conda activate trajpredict
+#   Step 1: conda env create -f environment.yml
+#   Step 2: conda activate trajpredict
+#   Step 3: pip install --no-cache-dir torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0
+#   Step 4: pip install --no-cache-dir -r requirements.txt
+#
+# Tested on: Python 3.11, CUDA 13.0, RTX 3050, Ubuntu, March 2026
 # ─────────────────────────────────────────────────────────────────
 
 # Data
@@ -19,7 +21,7 @@ pandas==2.2.3
 scipy==1.13.1
 
 # ML Utilities
-scikit-learn==1.8.0
+scikit-learn==1.7.2
 tqdm==4.67.3
 
 # Visualization
