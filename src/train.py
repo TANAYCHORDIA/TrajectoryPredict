@@ -142,7 +142,7 @@ def train_one_epoch(
         optimizer.step()
 
         # optional debug print (can remove later)
-        print(f"Batch {batch_idx+1}: Loss={loss.item():.4f}, Grad Norm={grad_norm:.4f}")
+        #print(f"Batch {batch_idx+1}: Loss={loss.item():.4f}, Grad Norm={grad_norm:.4f}")
 
         total_loss += loss.item()
 
