@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-
+from src.data.dataset import TrajectoryDataset
 from src.metrics import minade_minfde
 from src.model import TrajectoryPredictor
 from src.utils import get_device, set_seed, wta_loss
@@ -89,30 +89,67 @@ def validate_required_files(paths: list[Path]) -> None:
         )
 
 
-def create_dataloaders(args):
-    import numpy as np
-    from torch.utils.data import TensorDataset, DataLoader
+def resolve_optional_path(obs_path: Path, prefix: str) -> Path | None:
+    """Infer an optional companion array path from an observed trajectory path."""
+    candidate_name = obs_path.name
+    if candidate_name.startswith("obs_"):
+        candidate_name = candidate_name.replace("obs_", f"{prefix}_", 1)
+    else:
+        candidate_name = f"{prefix}_{candidate_name}"
 
-    obs_train = np.load(args.obs_train)
-    fut_train = np.load(args.fut_train)
+    candidate_path = obs_path.with_name(candidate_name)
+    return candidate_path if candidate_path.exists() else None
 
-    obs_val = np.load(args.obs_val)
-    fut_val = np.load(args.fut_val)
 
-    train_dataset = TensorDataset(
-        torch.tensor(obs_train, dtype=torch.float32),
-        torch.tensor(fut_train, dtype=torch.float32)
+def create_dataset(obs_path: Path, fut_path: Path) -> TrajectoryDataset:
+    """Create a dataset with optional social inputs when companion files exist."""
+    social_path = resolve_optional_path(obs_path, "social")
+    mask_path = resolve_optional_path(obs_path, "mask")
+    return TrajectoryDataset(
+        obs_path=str(obs_path),
+        fut_path=str(fut_path),
+        social_path=str(social_path) if social_path is not None else None,
+        mask_path=str(mask_path) if mask_path is not None else None,
     )
 
-    val_dataset = TensorDataset(
-        torch.tensor(obs_val, dtype=torch.float32),
-        torch.tensor(fut_val, dtype=torch.float32)
+
+def create_dataloaders(args: argparse.Namespace) -> tuple[DataLoader, DataLoader]:
+    """Build training and validation dataloaders."""
+    train_dataset = create_dataset(args.obs_train, args.fut_train)
+    val_dataset = create_dataset(args.obs_val, args.fut_val)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
     )
-
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
-
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+    )
     return train_loader, val_loader
+
+
+def unpack_batch(
+    batch: tuple[torch.Tensor, ...],
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    """Support both baseline and Day 4 batch formats."""
+    if len(batch) == 2:
+        obs, fut = batch
+        social = None
+        mask = None
+    elif len(batch) == 4:
+        obs, fut, social, mask = batch
+        social = social.to(device)
+        mask = mask.to(device)
+    else:
+        raise ValueError(f"Unexpected batch format with {len(batch)} elements.")
+
+    obs = obs.to(device)
+    fut = fut.to(device)
+    return obs, fut, social, mask
 
 
 def train_one_epoch(
@@ -125,25 +162,17 @@ def train_one_epoch(
     model.train()
     total_loss = 0.0
 
-    for batch_idx, (obs, fut) in enumerate(loader):
-        obs = obs.to(device)
-        fut = fut.to(device)
+    for batch in loader:
+        obs, fut, social, mask = unpack_batch(batch, device)
 
         optimizer.zero_grad()
-
-        preds = model(obs)
+        preds = model(obs, social, mask)
         loss = wta_loss(preds, fut)
-
         loss.backward()
 
-        # 🔥 gradient clipping + logging
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         optimizer.step()
-
-        # optional debug print (can remove later)
-        #print(f"Batch {batch_idx+1}: Loss={loss.item():.4f}, Grad Norm={grad_norm:.4f}")
-
         total_loss += loss.item()
 
     return total_loss / len(loader)
@@ -162,11 +191,10 @@ def validate_one_epoch(
     total_samples = 0
 
     with torch.no_grad():
-        for obs, fut in loader:
-            obs = obs.to(device)
-            fut = fut.to(device)
+        for batch in loader:
+            obs, fut, social, mask = unpack_batch(batch, device)
 
-            preds = model(obs)
+            preds = model(obs, social, mask)
             loss = wta_loss(preds, fut)
             total_loss += loss.item()
 
