@@ -7,9 +7,9 @@ import torch
 from torch.utils.data import DataLoader
 
 
-from metrics import minade_minfde
-from model import TrajectoryPredictor
-from utils import get_device, set_seed, wta_loss
+from src.metrics import minade_minfde
+from src.model import TrajectoryPredictor
+from src.utils import get_device, set_seed, wta_loss
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]

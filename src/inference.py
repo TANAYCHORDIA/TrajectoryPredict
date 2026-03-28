@@ -6,10 +6,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from dataset import TrajectoryDataset
-from metrics import minade_minfde
-from model import TrajectoryPredictor
-from utils import get_device
+from src.data.dataset import TrajectoryDataset
+from src.metrics import minade_minfde
+from src.model import TrajectoryPredictor
+from src.utils import get_device
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
