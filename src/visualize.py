@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -40,6 +42,18 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_FUT_PATH,
         help="Path to future trajectory numpy file for evaluation.",
+    )
+    parser.add_argument(
+        "--social-path",
+        type=Path,
+        default=None,
+        help="Optional path to social trajectory numpy file.",
+    )
+    parser.add_argument(
+        "--mask-path",
+        type=Path,
+        default=None,
+        help="Optional path to social mask numpy file.",
     )
     parser.add_argument(
         "--sample-idx",
@@ -109,6 +123,8 @@ def main() -> None:
         obs_path=args.obs_path,
         fut_path=args.fut_path,
         sample_idx=args.sample_idx,
+        social_path=args.social_path,
+        mask_path=args.mask_path,
         output_path=args.prediction_output,
     )
 

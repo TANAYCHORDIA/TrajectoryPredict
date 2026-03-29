@@ -42,6 +42,18 @@ def parse_args() -> argparse.Namespace:
         help="Path to future trajectory numpy file for evaluation.",
     )
     parser.add_argument(
+        "--social-path",
+        type=Path,
+        default=None,
+        help="Optional path to social trajectory numpy file.",
+    )
+    parser.add_argument(
+        "--mask-path",
+        type=Path,
+        default=None,
+        help="Optional path to social mask numpy file.",
+    )
+    parser.add_argument(
         "--sample-idx",
         type=int,
         default=0,
@@ -71,8 +83,15 @@ def load_sample(
     obs_path: Path,
     fut_path: Path,
     sample_idx: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    dataset = TrajectoryDataset(str(obs_path), str(fut_path))
+    social_path: Path | None = None,
+    mask_path: Path | None = None,
+) -> tuple[torch.Tensor, ...]:
+    dataset = TrajectoryDataset(
+        str(obs_path),
+        str(fut_path),
+        social_path=str(social_path) if social_path is not None else None,
+        mask_path=str(mask_path) if mask_path is not None else None,
+    )
 
     if sample_idx < 0 or sample_idx >= len(dataset):
         raise IndexError(
@@ -87,16 +106,33 @@ def run_inference(
     obs_path: Path,
     fut_path: Path,
     sample_idx: int,
+    social_path: Path | None = None,
+    mask_path: Path | None = None,
     output_path: Path | None = None,
 ) -> dict[str, np.ndarray | float | int]:
     device = get_device()
     model = load_model(checkpoint_path, device)
-    obs, fut = load_sample(obs_path, fut_path, sample_idx)
+    sample = load_sample(
+        obs_path=obs_path,
+        fut_path=fut_path,
+        sample_idx=sample_idx,
+        social_path=social_path,
+        mask_path=mask_path,
+    )
+
+    if len(sample) == 2:
+        obs, fut = sample
+        social = None
+        mask = None
+    else:
+        obs, fut, social, mask = sample
 
     obs_batch = obs.unsqueeze(0).to(device)
+    social_batch = social.unsqueeze(0).to(device) if social is not None else None
+    mask_batch = mask.unsqueeze(0).to(device) if mask is not None else None
 
     with torch.no_grad():
-        preds = model(obs_batch).squeeze(0).cpu()  # [3, 6, 2]
+        preds = model(obs_batch, social_batch, mask_batch).squeeze(0).cpu()
 
     min_ade, min_fde = minade_minfde(preds, fut)
 
@@ -132,6 +168,8 @@ def main() -> None:
         obs_path=args.obs_path,
         fut_path=args.fut_path,
         sample_idx=args.sample_idx,
+        social_path=args.social_path,
+        mask_path=args.mask_path,
         output_path=args.output,
     )
 
