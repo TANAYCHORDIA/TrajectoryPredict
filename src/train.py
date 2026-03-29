@@ -20,7 +20,7 @@ DEFAULT_FUT_VAL_PATH = ROOT_DIR / "data" / "processed" / "fut_val.npy"
 DEFAULT_CHECKPOINT_PATH = ROOT_DIR / "outputs" / "checkpoints" / "best_model.pth"
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_LEARNING_RATE = 1e-3
-DEFAULT_EPOCHS = 10
+DEFAULT_EPOCHS = 100
 DEFAULT_SEED = 42
 
 
@@ -232,12 +232,16 @@ def train(args: argparse.Namespace) -> None:
     train_loader, val_loader = create_dataloaders(args)
     model = TrajectoryPredictor().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs
+    )
 
     best_val_loss = float("inf")
 
     for epoch in range(args.epochs):
         train_loss = train_one_epoch(model, train_loader, optimizer, device)
         val_loss, val_ade, val_fde = validate_one_epoch(model, val_loader, device)
+        scheduler.step()
 
         print(
             f"Epoch {epoch + 1:02d}/{args.epochs:02d} | "
