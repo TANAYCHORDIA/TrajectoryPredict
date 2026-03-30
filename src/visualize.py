@@ -10,8 +10,7 @@ import numpy as np
 
 from src.inference import (
     DEFAULT_CHECKPOINT,
-    DEFAULT_FUT_PATH,
-    DEFAULT_OBS_PATH,
+    DEFAULT_DATA_DIR,
     DEFAULT_OUTPUT_PATH,
     run_inference,
 )
@@ -32,28 +31,16 @@ def parse_args() -> argparse.Namespace:
         help="Path to a trained model checkpoint.",
     )
     parser.add_argument(
-        "--obs-path",
+        "--data-dir",
         type=Path,
-        default=DEFAULT_OBS_PATH,
-        help="Path to observed trajectory numpy file.",
+        default=DEFAULT_DATA_DIR,
+        help="Path to processed trajectory dataset directory.",
     )
     parser.add_argument(
-        "--fut-path",
-        type=Path,
-        default=DEFAULT_FUT_PATH,
-        help="Path to future trajectory numpy file for evaluation.",
-    )
-    parser.add_argument(
-        "--social-path",
-        type=Path,
-        default=None,
-        help="Optional path to social trajectory numpy file.",
-    )
-    parser.add_argument(
-        "--mask-path",
-        type=Path,
-        default=None,
-        help="Optional path to social mask numpy file.",
+        "--split",
+        type=str,
+        default="val",
+        help="Dataset split to visualize from.",
     )
     parser.add_argument(
         "--sample-idx",
@@ -120,11 +107,9 @@ def main() -> None:
     args = parse_args()
     result = run_inference(
         checkpoint_path=args.checkpoint,
-        obs_path=args.obs_path,
-        fut_path=args.fut_path,
+        data_dir=args.data_dir,
+        split=args.split,
         sample_idx=args.sample_idx,
-        social_path=args.social_path,
-        mask_path=args.mask_path,
         output_path=args.prediction_output,
     )
 
