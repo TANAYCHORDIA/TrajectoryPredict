@@ -11,8 +11,8 @@ CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 PLOT_DIR = OUTPUT_DIR / "plots"
 LOG_DIR = OUTPUT_DIR / "logs"
 
-OBS_LEN = 8          # 2 sec at 4 Hz
-PRED_LEN = 12        # 3 sec at 4 Hz
+OBS_LEN = 4          # 2 sec at 2 Hz
+PRED_LEN = 6         # 3 sec at 2 Hz
 INPUT_DIM = 4        # x, y, dx, dy
 NUM_MODES = 3        # 3 future trajectories
 BATCH_SIZE = 64

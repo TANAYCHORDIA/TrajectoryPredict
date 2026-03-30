@@ -3,21 +3,34 @@ import numpy as np
 
 os.makedirs("data/processed", exist_ok=True)
 
-# Fake training data
-obs_train = np.random.randn(200, 8, 4).astype(np.float32)
-fut_train = np.random.randn(200, 12, 2).astype(np.float32)
+OBS_LEN = 4
+PRED_LEN = 6
+MAX_NEIGHBORS = 4
 
-# Fake validation data
-obs_val = np.random.randn(50, 8, 4).astype(np.float32)
-fut_val = np.random.randn(50, 12, 2).astype(np.float32)
+def make_split(n_samples: int):
+	inputs = np.random.randn(n_samples, OBS_LEN, 4).astype(np.float32)
+	targets = np.random.randn(n_samples, PRED_LEN, 2).astype(np.float32)
+	social = np.random.randn(n_samples, OBS_LEN, MAX_NEIGHBORS, 2).astype(np.float32)
 
-np.save("data/processed/obs_train.npy", obs_train)
-np.save("data/processed/fut_train.npy", fut_train)
-np.save("data/processed/obs_val.npy", obs_val)
-np.save("data/processed/fut_val.npy", fut_val)
+	# Random neighbor validity mask in [0,1], then hard-binarize.
+	mask = (np.random.rand(n_samples, OBS_LEN, MAX_NEIGHBORS) > 0.4).astype(np.float32)
+	social = social * mask[..., None]
+	return inputs, targets, social, mask
+
+splits = {
+	"train": 200,
+	"val": 50,
+	"test": 50,
+}
+
+for split, n in splits.items():
+	split_inputs, split_targets, split_social, split_mask = make_split(n)
+	np.save(f"data/processed/{split}_inputs.npy", split_inputs)
+	np.save(f"data/processed/{split}_targets.npy", split_targets)
+	np.save(f"data/processed/{split}_social.npy", split_social)
+	np.save(f"data/processed/{split}_mask.npy", split_mask)
 
 print("Fake data created successfully.")
-print("obs_train shape:", obs_train.shape)
-print("fut_train shape:", fut_train.shape)
-print("obs_val shape:", obs_val.shape)
-print("fut_val shape:", fut_val.shape)
+print("Generated files:")
+for split, n in splits.items():
+	print(f"- {split}: {n} samples | inputs [N,{OBS_LEN},4], targets [N,{PRED_LEN},2], social [N,{OBS_LEN},{MAX_NEIGHBORS},2], mask [N,{OBS_LEN},{MAX_NEIGHBORS}]")
