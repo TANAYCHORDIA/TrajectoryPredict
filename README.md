@@ -37,7 +37,7 @@ The model was evaluated across 74 complex, interactive urban scenes in the nuSce
 
 The model was trained and evaluated on the **nuScenes** dataset (Mini Split), focusing specifically on pedestrian and vehicle track features.
 
-🔗 **[Download the Dataset on Kaggle](YOUR_KAGGLE_LINK_HERE)**
+🔗 **[Download the Dataset on Kaggle]https://www.kaggle.com/datasets/tanaychordia/trajectorypredict**
 
 *(If running locally, place the raw dataset files in the `data/raw/` directory before running the preprocessing scripts).* 
 
@@ -48,7 +48,7 @@ The model was trained and evaluated on the **nuScenes** dataset (Mini Split), fo
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/TrajectoryPredict.git
+git clone https://github.com/TANAYCHORDIA/TrajectoryPredict.git
 cd TrajectoryPredict
 ```
 
