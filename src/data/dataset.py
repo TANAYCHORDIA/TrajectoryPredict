@@ -1,8 +1,7 @@
 import os
 import numpy as np
 import torch
-from torch.utils.data import Dataset
-
+from torch.utils.data import Dataset, DataLoader
 
 class TrajectoryDataset(Dataset):
     """
@@ -59,21 +58,13 @@ class TrajectoryDataset(Dataset):
         exp_mask = (obs_len, max_neighbors)
 
         if inputs_np.ndim != 3 or tuple(inputs_np.shape[1:]) != exp_inputs:
-            raise ValueError(
-                f"{split}_inputs.npy has shape {inputs_np.shape}, expected [N, {obs_len}, 4]"
-            )
+            raise ValueError(f"{split}_inputs.npy has shape {inputs_np.shape}, expected [N, {obs_len}, 4]")
         if targets_np.ndim != 3 or tuple(targets_np.shape[1:]) != exp_targets:
-            raise ValueError(
-                f"{split}_targets.npy has shape {targets_np.shape}, expected [N, {pred_len}, 2]"
-            )
+            raise ValueError(f"{split}_targets.npy has shape {targets_np.shape}, expected [N, {pred_len}, 2]")
         if social_np.ndim != 4 or tuple(social_np.shape[1:]) != exp_social:
-            raise ValueError(
-                f"{split}_social.npy has shape {social_np.shape}, expected [N, {obs_len}, {max_neighbors}, 2]"
-            )
+            raise ValueError(f"{split}_social.npy has shape {social_np.shape}, expected [N, {obs_len}, {max_neighbors}, 2]")
         if mask_np.ndim != 3 or tuple(mask_np.shape[1:]) != exp_mask:
-            raise ValueError(
-                f"{split}_mask.npy has shape {mask_np.shape}, expected [N, {obs_len}, {max_neighbors}]"
-            )
+            raise ValueError(f"{split}_mask.npy has shape {mask_np.shape}, expected [N, {obs_len}, {max_neighbors}]")
 
         n = inputs_np.shape[0]
         if not (targets_np.shape[0] == n == social_np.shape[0] == mask_np.shape[0]):
@@ -83,19 +74,13 @@ class TrajectoryDataset(Dataset):
                 f"social={social_np.shape[0]}, mask={mask_np.shape[0]}"
             )
 
-        # Optional NaN checks
         if validate_nans:
-            if np.isnan(inputs_np).any():
-                raise ValueError(f"NaN detected in {split}_inputs.npy")
-            if np.isnan(targets_np).any():
-                raise ValueError(f"NaN detected in {split}_targets.npy")
-            if np.isnan(social_np).any():
-                raise ValueError(f"NaN detected in {split}_social.npy")
-            if np.isnan(mask_np).any():
-                raise ValueError(f"NaN detected in {split}_mask.npy")
+            if np.isnan(inputs_np).any(): raise ValueError(f"NaN detected in {split}_inputs.npy")
+            if np.isnan(targets_np).any(): raise ValueError(f"NaN detected in {split}_targets.npy")
+            if np.isnan(social_np).any(): raise ValueError(f"NaN detected in {split}_social.npy")
+            if np.isnan(mask_np).any(): raise ValueError(f"NaN detected in {split}_mask.npy")
 
         # Convert to torch tensors once (fast __getitem__)
-        # If memory_map=True, asarray materializes clean contiguous arrays for from_numpy.
         self.inputs = torch.from_numpy(np.asarray(inputs_np, dtype=np.float32))
         self.targets = torch.from_numpy(np.asarray(targets_np, dtype=np.float32))
         self.social = torch.from_numpy(np.asarray(social_np, dtype=np.float32))
@@ -105,19 +90,34 @@ class TrajectoryDataset(Dataset):
         return self.inputs.shape[0]
 
     def __getitem__(self, idx: int):
-        # inputs: [obs_len, 4], targets: [pred_len, 2], social: [obs_len, K, 2], mask: [obs_len, K]
         return self.inputs[idx], self.targets[idx], self.social[idx], self.mask[idx]
-    
-from torch.utils.data import DataLoader
+
+
+def get_dataloaders(data_dir="data/processed", batch_size=64, num_workers=2):
+    """
+    Returns train, val, test DataLoaders.
+    """
+    train_dataset = TrajectoryDataset(data_dir=data_dir, split="train")
+    val_dataset = TrajectoryDataset(data_dir=data_dir, split="val")
+    test_dataset = TrajectoryDataset(data_dir=data_dir, split="test")
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    return train_loader, val_loader, test_loader
+
 
 if __name__ == "__main__":
     print("Sanity Check: PyTorch DataLoader with Social Features")
     try:
-        dataset = TrajectoryDataset(split="train")
-        loader = DataLoader(dataset, batch_size=64, shuffle=True, drop_last=True) 
+        train_loader, val_loader, test_loader = get_dataloaders()
+        
+        print(f"Total Train Batches: {len(train_loader)}")
+        print(f"Total Val Batches: {len(val_loader)}")
 
-        inputs, targets, social, mask = next(iter(loader))
-        print(f"Input shape:  {list(inputs.shape)} -> Expected [64, 4, 4]")
+        inputs, targets, social, mask = next(iter(train_loader))
+        print(f"\nInput shape:  {list(inputs.shape)} -> Expected [64, 4, 4]")
         print(f"Target shape: {list(targets.shape)} -> Expected [64, 6, 2]")
         print(f"Social shape: {list(social.shape)} -> Expected [64, 4, 4, 2]")
         print(f"Mask shape:   {list(mask.shape)}   -> Expected [64, 4, 4]")
@@ -126,7 +126,7 @@ if __name__ == "__main__":
             list(targets.shape) == [64, 6, 2] and 
             list(social.shape) == [64, 4, 4, 2] and 
             list(mask.shape) == [64, 4, 4]):
-            print("\n✅ SUCCESS: Pipeline verified. All 4 tensors are ready for the ML Lead.")
+            print("\n✅ SUCCESS: Conflict resolved. API maintained. Tensors optimized.")
         else:
             print("\n❌ FAILURE: Tensor dimensions do not match specifications.")
             

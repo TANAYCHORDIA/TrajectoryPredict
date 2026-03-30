@@ -1,99 +1,268 @@
-import os
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import TrajectoryDataset
-from model import TrajectoryPredictor
-from utils import set_seed, get_device, wta_loss
+from src.data.dataset import TrajectoryDataset
+from src.metrics import minade_minfde
+from src.model import TrajectoryPredictor
+from src.utils import get_device, set_seed, wta_loss
 
 
-OBS_TRAIN_PATH = "data/processed/obs_train.npy"
-FUT_TRAIN_PATH = "data/processed/fut_train.npy"
-OBS_VAL_PATH = "data/processed/obs_val.npy"
-FUT_VAL_PATH = "data/processed/fut_val.npy"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_OBS_TRAIN_PATH = ROOT_DIR / "data" / "processed" / "obs_train.npy"
+DEFAULT_FUT_TRAIN_PATH = ROOT_DIR / "data" / "processed" / "fut_train.npy"
+DEFAULT_OBS_VAL_PATH = ROOT_DIR / "data" / "processed" / "obs_val.npy"
+DEFAULT_FUT_VAL_PATH = ROOT_DIR / "data" / "processed" / "fut_val.npy"
+DEFAULT_CHECKPOINT_PATH = ROOT_DIR / "outputs" / "checkpoints" / "best_model.pth"
+DEFAULT_BATCH_SIZE = 64
+DEFAULT_LEARNING_RATE = 1e-3
+DEFAULT_EPOCHS = 100
+DEFAULT_SEED = 42
 
-BATCH_SIZE = 64
-LEARNING_RATE = 1e-3
-EPOCHS = 10
-CHECKPOINT_PATH = "outputs/checkpoints/best_model.pth"
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for training."""
+    parser = argparse.ArgumentParser(description="Train trajectory prediction model.")
+    parser.add_argument(
+        "--obs-train",
+        type=Path,
+        default=DEFAULT_OBS_TRAIN_PATH,
+        help="Path to observed training trajectories.",
+    )
+    parser.add_argument(
+        "--fut-train",
+        type=Path,
+        default=DEFAULT_FUT_TRAIN_PATH,
+        help="Path to future training trajectories.",
+    )
+    parser.add_argument(
+        "--obs-val",
+        type=Path,
+        default=DEFAULT_OBS_VAL_PATH,
+        help="Path to observed validation trajectories.",
+    )
+    parser.add_argument(
+        "--fut-val",
+        type=Path,
+        default=DEFAULT_FUT_VAL_PATH,
+        help="Path to future validation trajectories.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=DEFAULT_CHECKPOINT_PATH,
+        help="Path to save the best model checkpoint.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help="Mini-batch size for training and validation.",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=DEFAULT_LEARNING_RATE,
+        help="Learning rate for the Adam optimizer.",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=DEFAULT_EPOCHS,
+        help="Number of training epochs.",
+    )
+    return parser.parse_args()
 
 
-def train_one_epoch(model, loader, optimizer, device):
+def validate_required_files(paths: list[Path]) -> None:
+    """Raise a helpful error if any required data file is missing."""
+    missing_paths = [path for path in paths if not path.exists()]
+    if missing_paths:
+        missing_list = "\n".join(str(path) for path in missing_paths)
+        raise FileNotFoundError(
+            f"Missing required file(s):\n{missing_list}\n"
+            "Ask Data Engineer to provide processed .npy files first."
+        )
+
+
+def resolve_optional_path(obs_path: Path, prefix: str) -> Path | None:
+    """Infer an optional companion array path from an observed trajectory path."""
+    candidate_name = obs_path.name
+    if candidate_name.startswith("obs_"):
+        candidate_name = candidate_name.replace("obs_", f"{prefix}_", 1)
+    else:
+        candidate_name = f"{prefix}_{candidate_name}"
+
+    candidate_path = obs_path.with_name(candidate_name)
+    return candidate_path if candidate_path.exists() else None
+
+
+def create_dataset(obs_path: Path, fut_path: Path) -> TrajectoryDataset:
+    """Create a dataset with optional social inputs when companion files exist."""
+    social_path = resolve_optional_path(obs_path, "social")
+    mask_path = resolve_optional_path(obs_path, "mask")
+    return TrajectoryDataset(
+        obs_path=str(obs_path),
+        fut_path=str(fut_path),
+        social_path=str(social_path) if social_path is not None else None,
+        mask_path=str(mask_path) if mask_path is not None else None,
+    )
+
+
+def create_dataloaders(args: argparse.Namespace) -> tuple[DataLoader, DataLoader]:
+    """Build training and validation dataloaders."""
+    train_dataset = create_dataset(args.obs_train, args.fut_train)
+    val_dataset = create_dataset(args.obs_val, args.fut_val)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+    )
+    return train_loader, val_loader
+
+
+def unpack_batch(
+    batch: tuple[torch.Tensor, ...],
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    """Support both baseline and Day 4 batch formats."""
+    if len(batch) == 2:
+        obs, fut = batch
+        social = None
+        mask = None
+    elif len(batch) == 4:
+        obs, fut, social, mask = batch
+        social = social.to(device)
+        mask = mask.to(device)
+    else:
+        raise ValueError(f"Unexpected batch format with {len(batch)} elements.")
+
+    obs = obs.to(device)
+    fut = fut.to(device)
+    return obs, fut, social, mask
+
+
+def train_one_epoch(
+    model: TrajectoryPredictor,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+) -> float:
+    """Run one training epoch and return average loss."""
     model.train()
     total_loss = 0.0
 
-    for obs, fut in loader:
-        obs = obs.to(device)
-        fut = fut.to(device)
+    for batch in loader:
+        obs, fut, social, mask = unpack_batch(batch, device)
 
         optimizer.zero_grad()
-        preds = model(obs)
+        preds = model(obs, social, mask)
         loss = wta_loss(preds, fut)
         loss.backward()
-        optimizer.step()
 
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+        optimizer.step()
         total_loss += loss.item()
 
     return total_loss / len(loader)
 
 
-def validate_one_epoch(model, loader, device):
+def validate_one_epoch(
+    model: TrajectoryPredictor,
+    loader: DataLoader,
+    device: torch.device,
+) -> tuple[float, float, float]:
+    """Run one validation epoch and return loss, ADE, and FDE."""
     model.eval()
     total_loss = 0.0
+    total_ade = 0.0
+    total_fde = 0.0
+    total_samples = 0
 
     with torch.no_grad():
-        for obs, fut in loader:
-            obs = obs.to(device)
-            fut = fut.to(device)
+        for batch in loader:
+            obs, fut, social, mask = unpack_batch(batch, device)
 
-            preds = model(obs)
+            preds = model(obs, social, mask)
             loss = wta_loss(preds, fut)
-
             total_loss += loss.item()
 
-    return total_loss / len(loader)
+            batch_size = obs.size(0)
+            for index in range(batch_size):
+                min_ade, min_fde = minade_minfde(preds[index], fut[index])
+                total_ade += float(min_ade)
+                total_fde += float(min_fde)
+
+            total_samples += batch_size
+
+    avg_loss = total_loss / len(loader)
+    avg_ade = total_ade / total_samples
+    avg_fde = total_fde / total_samples
+    return avg_loss, avg_ade, avg_fde
 
 
-def main():
-    set_seed(42)
+def train(args: argparse.Namespace) -> None:
+    """Train the model and save the best checkpoint by validation loss."""
+    set_seed(DEFAULT_SEED)
     device = get_device()
-    print("Using device:", device)
+    print(f"Using device: {device}")
 
-    # Check if processed files exist
-    required_files = [
-        OBS_TRAIN_PATH, FUT_TRAIN_PATH,
-        OBS_VAL_PATH, FUT_VAL_PATH
-    ]
+    validate_required_files(
+        [
+            args.obs_train,
+            args.fut_train,
+            args.obs_val,
+            args.fut_val,
+        ]
+    )
 
-    for file_path in required_files:
-        if not os.path.exists(file_path):
-            print(f"Missing file: {file_path}")
-            print("Ask Data Engineer to provide processed .npy files first.")
-            return
+    args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
 
-    train_dataset = TrajectoryDataset(OBS_TRAIN_PATH, FUT_TRAIN_PATH)
-    val_dataset = TrajectoryDataset(OBS_VAL_PATH, FUT_VAL_PATH)
-
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
-
+    train_loader, val_loader = create_dataloaders(args)
     model = TrajectoryPredictor().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs
+    )
 
     best_val_loss = float("inf")
 
-    for epoch in range(EPOCHS):
+    for epoch in range(args.epochs):
         train_loss = train_one_epoch(model, train_loader, optimizer, device)
-        val_loss = validate_one_epoch(model, val_loader, device)
+        val_loss, val_ade, val_fde = validate_one_epoch(model, val_loader, device)
+        scheduler.step()
 
-        print(f"Epoch {epoch+1}/{EPOCHS} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+        print(
+            f"Epoch {epoch + 1:02d}/{args.epochs:02d} | "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | "
+            f"Val ADE: {val_ade:.4f} | "
+            f"Val FDE: {val_fde:.4f}"
+        )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), CHECKPOINT_PATH)
-            print(f"Saved best model to {CHECKPOINT_PATH}")
+            torch.save(model.state_dict(), args.checkpoint)
+            print(f"Saved best model to {args.checkpoint}")
 
     print("Training complete.")
+
+
+def main() -> None:
+    """CLI entrypoint for model training."""
+    args = parse_args()
+    train(args)
 
 
 if __name__ == "__main__":
