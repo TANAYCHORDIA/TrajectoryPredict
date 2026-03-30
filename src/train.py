@@ -6,17 +6,15 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from src.data.dataset import TrajectoryDataset
+# Import the factory function we saved!
+from src.data.dataset import get_dataloaders
 from src.metrics import minade_minfde
 from src.model import TrajectoryPredictor
 from src.utils import get_device, set_seed, wta_loss
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_OBS_TRAIN_PATH = ROOT_DIR / "data" / "processed" / "obs_train.npy"
-DEFAULT_FUT_TRAIN_PATH = ROOT_DIR / "data" / "processed" / "fut_train.npy"
-DEFAULT_OBS_VAL_PATH = ROOT_DIR / "data" / "processed" / "obs_val.npy"
-DEFAULT_FUT_VAL_PATH = ROOT_DIR / "data" / "processed" / "fut_val.npy"
+DEFAULT_DATA_DIR = ROOT_DIR / "data" / "processed"
 DEFAULT_CHECKPOINT_PATH = ROOT_DIR / "outputs" / "checkpoints" / "best_model.pth"
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_LEARNING_RATE = 1e-3
@@ -28,28 +26,10 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for training."""
     parser = argparse.ArgumentParser(description="Train trajectory prediction model.")
     parser.add_argument(
-        "--obs-train",
+        "--data-dir",
         type=Path,
-        default=DEFAULT_OBS_TRAIN_PATH,
-        help="Path to observed training trajectories.",
-    )
-    parser.add_argument(
-        "--fut-train",
-        type=Path,
-        default=DEFAULT_FUT_TRAIN_PATH,
-        help="Path to future training trajectories.",
-    )
-    parser.add_argument(
-        "--obs-val",
-        type=Path,
-        default=DEFAULT_OBS_VAL_PATH,
-        help="Path to observed validation trajectories.",
-    )
-    parser.add_argument(
-        "--fut-val",
-        type=Path,
-        default=DEFAULT_FUT_VAL_PATH,
-        help="Path to future validation trajectories.",
+        default=DEFAULT_DATA_DIR,
+        help="Path to the directory containing processed .npy files.",
     )
     parser.add_argument(
         "--checkpoint",
@@ -78,78 +58,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_required_files(paths: list[Path]) -> None:
-    """Raise a helpful error if any required data file is missing."""
-    missing_paths = [path for path in paths if not path.exists()]
-    if missing_paths:
-        missing_list = "\n".join(str(path) for path in missing_paths)
-        raise FileNotFoundError(
-            f"Missing required file(s):\n{missing_list}\n"
-            "Ask Data Engineer to provide processed .npy files first."
-        )
-
-
-def resolve_optional_path(obs_path: Path, prefix: str) -> Path | None:
-    """Infer an optional companion array path from an observed trajectory path."""
-    candidate_name = obs_path.name
-    if candidate_name.startswith("obs_"):
-        candidate_name = candidate_name.replace("obs_", f"{prefix}_", 1)
-    else:
-        candidate_name = f"{prefix}_{candidate_name}"
-
-    candidate_path = obs_path.with_name(candidate_name)
-    return candidate_path if candidate_path.exists() else None
-
-
-def create_dataset(obs_path: Path, fut_path: Path) -> TrajectoryDataset:
-    """Create a dataset with optional social inputs when companion files exist."""
-    social_path = resolve_optional_path(obs_path, "social")
-    mask_path = resolve_optional_path(obs_path, "mask")
-    return TrajectoryDataset(
-        obs_path=str(obs_path),
-        fut_path=str(fut_path),
-        social_path=str(social_path) if social_path is not None else None,
-        mask_path=str(mask_path) if mask_path is not None else None,
-    )
-
-
-def create_dataloaders(args: argparse.Namespace) -> tuple[DataLoader, DataLoader]:
-    """Build training and validation dataloaders."""
-    train_dataset = create_dataset(args.obs_train, args.fut_train)
-    val_dataset = create_dataset(args.obs_val, args.fut_val)
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-    )
-    return train_loader, val_loader
-
-
 def unpack_batch(
     batch: tuple[torch.Tensor, ...],
     device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
-    """Support both baseline and Day 4 batch formats."""
-    if len(batch) == 2:
-        obs, fut = batch
-        social = None
-        mask = None
-    elif len(batch) == 4:
-        obs, fut, social, mask = batch
-        social = social.to(device)
-        mask = mask.to(device)
-    else:
-        raise ValueError(f"Unexpected batch format with {len(batch)} elements.")
-
-    obs = obs.to(device)
-    fut = fut.to(device)
-    return obs, fut, social, mask
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Our dataloader strictly returns the 4-tuple: (inputs, targets, social, mask)"""
+    obs, fut, social, mask = batch
+    return obs.to(device), fut.to(device), social.to(device), mask.to(device)
 
 
 def train_one_epoch(
@@ -218,18 +133,15 @@ def train(args: argparse.Namespace) -> None:
     device = get_device()
     print(f"Using device: {device}")
 
-    validate_required_files(
-        [
-            args.obs_train,
-            args.fut_train,
-            args.obs_val,
-            args.fut_val,
-        ]
-    )
-
     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
 
-    train_loader, val_loader = create_dataloaders(args)
+    # The pipeline integration happens cleanly right here:
+    print(f"Loading datasets from: {args.data_dir}")
+    train_loader, val_loader, _ = get_dataloaders(
+        data_dir=str(args.data_dir), 
+        batch_size=args.batch_size
+    )
+    
     model = TrajectoryPredictor().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
