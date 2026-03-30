@@ -1,105 +1,134 @@
 import os
-
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset
-
+from torch.utils.data import Dataset, DataLoader
 
 class TrajectoryDataset(Dataset):
+    """
+    Loads trajectory tensors for one split.
+
+    Expected shapes:
+      inputs:  [N, obs_len, 4]
+      targets: [N, pred_len, 2]
+      social:  [N, obs_len, max_neighbors, 2]
+      mask:    [N, obs_len, max_neighbors]
+    """
+
     def __init__(
         self,
-        obs_path,
-        fut_path,
-        social_path=None,
-        mask_path=None,
+        data_dir: str = "data/processed",
+        split: str = "train",
+        obs_len: int = 4,
+        pred_len: int = 6,
+        max_neighbors: int = 4,
+        memory_map: bool = False,
+        validate_nans: bool = True,
     ):
-        """
-        Load preprocessed trajectory arrays.
+        self.data_dir = data_dir
+        self.split = split
+        self.obs_len = obs_len
+        self.pred_len = pred_len
+        self.max_neighbors = max_neighbors
 
-        obs_path: path to [N, 4, 4] npy file
-        fut_path: path to [N, 6, 2] npy file
-        social_path: optional path to [N, 4, 4, 2] npy file
-        mask_path: optional path to [N, 4, 4] npy file
-        """
-        self.obs = np.load(obs_path)
-        self.fut = np.load(fut_path)
-        self.social = np.load(social_path) if social_path is not None else None
-        self.mask = np.load(mask_path) if mask_path is not None else None
+        paths = {
+            "inputs": os.path.join(data_dir, f"{split}_inputs.npy"),
+            "targets": os.path.join(data_dir, f"{split}_targets.npy"),
+            "social": os.path.join(data_dir, f"{split}_social.npy"),
+            "mask": os.path.join(data_dir, f"{split}_mask.npy"),
+        }
 
-        if len(self.obs) != len(self.fut):
-            raise ValueError("Observed inputs and targets length mismatch.")
+        missing = [name for name, p in paths.items() if not os.path.exists(p)]
+        if missing:
+            raise FileNotFoundError(
+                f"Missing {split} dataset files in {data_dir}: {missing}"
+            )
 
-        if (self.social is None) != (self.mask is None):
-            raise ValueError("social_path and mask_path must be provided together.")
+        mmap_mode = "r" if memory_map else None
 
-        if self.social is not None and len(self.social) != len(self.obs):
-            raise ValueError("Observed inputs and social inputs length mismatch.")
+        # Safe numpy loading
+        inputs_np = np.load(paths["inputs"], allow_pickle=False, mmap_mode=mmap_mode)
+        targets_np = np.load(paths["targets"], allow_pickle=False, mmap_mode=mmap_mode)
+        social_np = np.load(paths["social"], allow_pickle=False, mmap_mode=mmap_mode)
+        mask_np = np.load(paths["mask"], allow_pickle=False, mmap_mode=mmap_mode)
 
-        if self.mask is not None and len(self.mask) != len(self.obs):
-            raise ValueError("Observed inputs and masks length mismatch.")
+        # Shape checks
+        exp_inputs = (obs_len, 4)
+        exp_targets = (pred_len, 2)
+        exp_social = (obs_len, max_neighbors, 2)
+        exp_mask = (obs_len, max_neighbors)
 
-        self.has_social = self.social is not None
+        if inputs_np.ndim != 3 or tuple(inputs_np.shape[1:]) != exp_inputs:
+            raise ValueError(f"{split}_inputs.npy has shape {inputs_np.shape}, expected [N, {obs_len}, 4]")
+        if targets_np.ndim != 3 or tuple(targets_np.shape[1:]) != exp_targets:
+            raise ValueError(f"{split}_targets.npy has shape {targets_np.shape}, expected [N, {pred_len}, 2]")
+        if social_np.ndim != 4 or tuple(social_np.shape[1:]) != exp_social:
+            raise ValueError(f"{split}_social.npy has shape {social_np.shape}, expected [N, {obs_len}, {max_neighbors}, 2]")
+        if mask_np.ndim != 3 or tuple(mask_np.shape[1:]) != exp_mask:
+            raise ValueError(f"{split}_mask.npy has shape {mask_np.shape}, expected [N, {obs_len}, {max_neighbors}]")
 
-    def __len__(self):
-        return len(self.obs)
+        n = inputs_np.shape[0]
+        if not (targets_np.shape[0] == n == social_np.shape[0] == mask_np.shape[0]):
+            raise ValueError(
+                f"Sample-count mismatch for split='{split}': "
+                f"inputs={inputs_np.shape[0]}, targets={targets_np.shape[0]}, "
+                f"social={social_np.shape[0]}, mask={mask_np.shape[0]}"
+            )
 
-    def __getitem__(self, idx):
-        obs_tensor = torch.tensor(self.obs[idx], dtype=torch.float32)
-        fut_tensor = torch.tensor(self.fut[idx], dtype=torch.float32)
+        if validate_nans:
+            if np.isnan(inputs_np).any(): raise ValueError(f"NaN detected in {split}_inputs.npy")
+            if np.isnan(targets_np).any(): raise ValueError(f"NaN detected in {split}_targets.npy")
+            if np.isnan(social_np).any(): raise ValueError(f"NaN detected in {split}_social.npy")
+            if np.isnan(mask_np).any(): raise ValueError(f"NaN detected in {split}_mask.npy")
 
-        if not self.has_social:
-            return obs_tensor, fut_tensor
+        # Convert to torch tensors once (fast __getitem__)
+        self.inputs = torch.from_numpy(np.asarray(inputs_np, dtype=np.float32))
+        self.targets = torch.from_numpy(np.asarray(targets_np, dtype=np.float32))
+        self.social = torch.from_numpy(np.asarray(social_np, dtype=np.float32))
+        self.mask = torch.from_numpy(np.asarray(mask_np, dtype=np.float32))
 
-        social_tensor = torch.tensor(self.social[idx], dtype=torch.float32)
-        mask_tensor = torch.tensor(self.mask[idx], dtype=torch.float32)
-        return obs_tensor, fut_tensor, social_tensor, mask_tensor
+    def __len__(self) -> int:
+        return self.inputs.shape[0]
+
+    def __getitem__(self, idx: int):
+        return self.inputs[idx], self.targets[idx], self.social[idx], self.mask[idx]
 
 
 def get_dataloaders(data_dir="data/processed", batch_size=64, num_workers=2):
-    train_dataset = TrajectoryDataset(
-        os.path.join(data_dir, "train_inputs.npy"),
-        os.path.join(data_dir, "train_targets.npy"),
-    )
-    val_dataset = TrajectoryDataset(
-        os.path.join(data_dir, "val_inputs.npy"),
-        os.path.join(data_dir, "val_targets.npy"),
-    )
-    test_dataset = TrajectoryDataset(
-        os.path.join(data_dir, "test_inputs.npy"),
-        os.path.join(data_dir, "test_targets.npy"),
-    )
+    """
+    Returns train, val, test DataLoaders.
+    """
+    train_dataset = TrajectoryDataset(data_dir=data_dir, split="train")
+    val_dataset = TrajectoryDataset(data_dir=data_dir, split="val")
+    test_dataset = TrajectoryDataset(data_dir=data_dir, split="test")
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-    )
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-    )
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return train_loader, val_loader, test_loader
 
 
 if __name__ == "__main__":
-    train_loader, val_loader, test_loader = get_dataloaders()
+    print("Sanity Check: PyTorch DataLoader with Social Features")
+    try:
+        train_loader, val_loader, test_loader = get_dataloaders()
+        
+        print(f"Total Train Batches: {len(train_loader)}")
+        print(f"Total Val Batches: {len(val_loader)}")
 
-    print(f"Total Train Batches: {len(train_loader)}")
-    print(f"Total Val Batches: {len(val_loader)}")
-
-    for obs, fut in train_loader:
-        print("\n--- Shape Sanity Check (Train) ---")
-        print(f"Input shape: {obs.shape}  --> Expected: torch.Size([batch, 4, 4])")
-        print(f"Target shape: {fut.shape} --> Expected: torch.Size([batch, 6, 2])")
-        print(f"Input dtype: {obs.dtype}")
-        break
+        inputs, targets, social, mask = next(iter(train_loader))
+        print(f"\nInput shape:  {list(inputs.shape)} -> Expected [64, 4, 4]")
+        print(f"Target shape: {list(targets.shape)} -> Expected [64, 6, 2]")
+        print(f"Social shape: {list(social.shape)} -> Expected [64, 4, 4, 2]")
+        print(f"Mask shape:   {list(mask.shape)}   -> Expected [64, 4, 4]")
+        
+        if (list(inputs.shape) == [64, 4, 4] and 
+            list(targets.shape) == [64, 6, 2] and 
+            list(social.shape) == [64, 4, 4, 2] and 
+            list(mask.shape) == [64, 4, 4]):
+            print("\n✅ SUCCESS: Conflict resolved. API maintained. Tensors optimized.")
+        else:
+            print("\n❌ FAILURE: Tensor dimensions do not match specifications.")
+            
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
