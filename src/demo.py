@@ -74,7 +74,7 @@ def generate_demo():
     start_time = time.time()
     
     # Hand-picked scenes that show a variety of behaviors (straight, curves, intersections)
-    demo_scenes = [0, 10, 20, 45, 60] 
+    demo_scenes = [38, 53, 12, 50, 52]
     output_dir = Path("outputs/demo")
     
     for idx in demo_scenes:
