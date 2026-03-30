@@ -1,11 +1,23 @@
+# Python Environment & Caches
 .venv/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
 
+# Datasets and Large Arrays
+data/raw/
+data/maps/
 data/processed/*.npy
+
+# Model Checkpoints (Ignore all EXCEPT the final submission model)
 outputs/checkpoints/*.pth
-outputs/plots/*
-outputs/predictions/*
-project.zip
+!outputs/checkpoints/best_social_model.pth
+
+# Outputs & Predictions
+outputs/plots/
+outputs/predictions/*.npz
+# Note: outputs/demo/ is intentionally NOT ignored so judges can see the dashboard images
+
+# OS & Archive Files
 .DS_Store
+project.zip
