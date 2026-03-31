@@ -23,7 +23,7 @@ The model was evaluated on 74 trajectory samples across 8 scenes from the nuScen
 | Architecture | Social Context | Multimodal | Mean minADE (m) | Mean minFDE (m) |
 | :--- | :---: | :---: | :---: | :---: |
 | LSTM Baseline | ❌ | ❌ | — | — |
-| LSTM + Social Pooling (Final) | ✅ | ✅ K=3 | **0.2308** | **0.4122** |
+| LSTM + Social Pooling (Final) | ✅ | ✅ K=3 | **0.2252** | **0.4016** |
 
 *ADE and FDE are measured in metres. minADE/minFDE report the best of K=3 predicted modes.*
 *Trained and evaluated on nuScenes mini split (8 scenes). Full dataset performance expected in the 0.8–1.5m ADE range based on published baselines.*
@@ -62,7 +62,7 @@ pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0
 pip install -r requirements.txt
 ```
 
-> Ensure `best_model_social.pth` is in `outputs/checkpoints/` before running inference.
+> Ensure `best_model_final.pth` is in `outputs/checkpoints/` before running inference.
 
 ---
 

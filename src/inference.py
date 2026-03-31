@@ -10,7 +10,7 @@ from src.metrics import minade_minfde
 from src.model import TrajectoryPredictor
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_CHECKPOINT = ROOT_DIR / "outputs" / "checkpoints" / "best_model_social.pth"
+DEFAULT_CHECKPOINT = ROOT_DIR / "outputs" / "checkpoints" / "best_model_final.pth"
 DEFAULT_OBS_PATH = ROOT_DIR / "data" / "processed" / "val_inputs.npy"
 DEFAULT_FUT_PATH = ROOT_DIR / "data" / "processed" / "val_targets.npy"
 DEFAULT_SOCIAL_PATH = ROOT_DIR / "data" / "processed" / "val_social.npy"

@@ -11,7 +11,7 @@ data/processed/*.npy
 
 # Model Checkpoints (Ignore all EXCEPT the final submission model)
 outputs/checkpoints/*.pth
-!outputs/checkpoints/best_model_social.pth
+!outputs/checkpoints/best_model_final.pth
 
 # Outputs & Predictions
 outputs/plots/
