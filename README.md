@@ -1,4 +1,3 @@
-````markdown
 # 🧭 Autonomous Trajectory & Intent Prediction (L4)
 
 <div align="center">
@@ -8,31 +7,64 @@
 ![CUDA](https://img.shields.io/badge/CUDA-13.0-76B900?style=for-the-badge&logo=nvidia&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-**A production-ready Behavioral AI pipeline for autonomous vehicle systems.**  
-Predicts where pedestrians and cyclists will be — before they get there.
+**Predicts where pedestrians will be — before they get there.**
 
-[📊 View Metrics](#-performance) • [🚀 Quick Start](#-setup--installation) • [🎮 Run Demo](#-running-the-project) • [❓ Help](#-troubleshooting)
+[📊 Performance](#-performance) • [🚀 Setup](#-setup--installation) • [🎬 Demo](#-running-the-project) • [❓ Help](#-troubleshooting)
 
 </div>
 
 ---
 
+## 🎬 Demo Preview
+
+<p align="center">
+  <img src="assets/demo.gif" width="700"/>
+</p>
+
+> ⚠️ If the GIF doesn't load, generate it from `outputs/demo/` screenshots.
+
+---
+
 ## 📌 Overview
 
-Given just **2 seconds** of an agent's past movement, this system predicts their **3 most likely paths** over the next **3 seconds** — accounting for uncertainty in human behavior and the influence of nearby people.
+Given **2 seconds of motion**, the model predicts **3 possible futures (3 seconds ahead)** — capturing real-world uncertainty in human behavior.
+
+> 🚫 Not deterministic  
+> ✅ Multimodal, socially-aware prediction
 
 ```
-Input:   [(x₁,y₁), (x₂,y₂), (x₃,y₃), (x₄,y₄)]   ← 2 seconds of history
-                              ↓
-                         LSTM Model
-                    + Social Pooling Layer
-                              ↓
-Output:  Mode 1 → [(x̂₁,ŷ₁) ... (x̂₆,ŷ₆)]          ← most likely path
-         Mode 2 → [(x̂₁,ŷ₁) ... (x̂₆,ŷ₆)]          ← alternative path
-         Mode 3 → [(x̂₁,ŷ₁) ... (x̂₆,ŷ₆)]          ← alternative path
+Input:   [(x₁,y₁), (x₂,y₂), (x₃,y₃), (x₄,y₄)]
+↓
+LSTM Model
++ Social Pooling Layer
+↓
+Output:  Mode 1 → future trajectory (most likely)
+Mode 2 → alternative future
+Mode 3 → alternative future
 ```
 
-Unlike naive constant-velocity extrapolation, this model understands **social dynamics** — it knows that people slow down, turn, and respond to those around them.
+---
+
+## 🎯 Why This Matters
+
+Autonomous systems cannot rely on reaction alone.
+
+They must:
+- Anticipate pedestrian intent  
+- Handle uncertainty  
+- Avoid unsafe last-moment decisions  
+
+This model shifts from **reaction → prediction**.
+
+---
+
+## ⚡ Key Highlights
+
+- Multimodal trajectory prediction (K=3)
+- Social interaction modeling (neighbor-aware)
+- Rotation-invariant coordinate system
+- Winner-Takes-All loss to prevent mode collapse
+- End-to-end pipeline (data → model → evaluation)
 
 ---
 
@@ -45,16 +77,20 @@ Unlike naive constant-velocity extrapolation, this model understands **social dy
 ### Pipeline Steps
 
 **① Coordinate Normalization**  
-Raw global `(x, y)` coordinates are translated to an agent-centric origin and rotated so the heading aligns with the positive X-axis. The model learns *movement patterns*, not map locations.
+Transforms coordinates into an agent-centric frame  
+→ model learns motion, not location
 
 **② Social Context Pooling**  
-All neighboring agents within a **2-metre radius** are identified at each timestep. Their relative positions are encoded and fed into the model, enabling it to understand group dynamics and avoid predicted collisions.
+Encodes neighbors within **2m radius**  
+→ captures interactions & avoids collisions
 
 **③ Multimodal LSTM Backbone**  
-A 2-layer LSTM encoder (`hidden=128`) processes the 4-timestep history. Three independent decoder heads each produce one predicted trajectory, outputting a `[3, 6, 2]` tensor.
+- 2-layer LSTM (hidden = 128)  
+- 3 decoder heads  
+- Output: `[3, 6, 2]`
 
 **④ Inverse Rotation**  
-Predictions are mathematically rotated back into global map coordinates, ready for downstream AV simulators or visualization tools.
+Transforms predictions back to global coordinates
 
 </td>
 <td width="50%">
@@ -63,31 +99,24 @@ Predictions are mathematically rotated back into global map coordinates, ready f
 
 ```
 Input: [batch, 4, 4]
-  └─ (x, y, dx, dy) per timestep
-
-        ┌─────────────────┐
-        │   LSTM Encoder  │
-        │  hidden=128     │
-        │  layers=2       │
-        └────────┬────────┘
-                 │
-        ┌────────▼────────┐
-        │  Social MLP     │
-        │  neighbors→64d  │
-        └────────┬────────┘
-                 │ concat [128+64=192]
-        ┌────────▼────────┐
-        │ 3× Decoder Head │
-        │ 192→128→12      │
-        └────────┬────────┘
-                 │ reshape
+```
+```
+    LSTM Encoder (128)
+           ↓
+    Social Features (64)
+           ↓
+    Concatenate (192)
+           ↓
+    3× Decoder Heads
+           ↓
+```
+```
 Output: [batch, 3, 6, 2]
-  └─ 3 modes × 6 timesteps × (x,y)
 ```
 
-**Loss:** Winner-Takes-All with 10-epoch warmup  
-**Optimizer:** Adam  
-**Social radius:** 2.0 metres  
+**Key Idea:** Model behavior, not position  
+**Social Radius:** 2m  
+**Loss:** Winner-Takes-All  
 
 </td>
 </tr>
@@ -97,245 +126,124 @@ Output: [batch, 3, 6, 2]
 
 ## 📊 Performance
 
-> Evaluated on **74 trajectory samples** across **8 scenes** from the nuScenes mini split.
+> Evaluated on **74 samples / 8 scenes (nuScenes mini)**
 
 <div align="center">
 
-| Architecture | Social Context | Multimodal Output | Mean minADE ↓ | Mean minFDE ↓ |
-| :--- | :---: | :---: | :---: | :---: |
-| LSTM + Social Pooling | ✅ | ✅ K=3 | **0.2252 m** | **0.4016 m** |
+| Model | Social | Multimodal | Mean minADE | Mean minFDE |
+|------|--------|------------|------------|------------|
+| **LSTM + Social Pooling** | ✅ | ✅ (K=3) | **0.2252 m** | **0.4016 m** |
 
 </div>
 
-> 💡 **What these numbers mean:**  
-> - **minADE** — average distance between the best predicted path and ground truth, across all timesteps  
-> - **minFDE** — distance between the predicted final position and where the agent actually ended up  
-> - Lower is better. Hackathon qualification threshold: ADE < 1.5m, FDE < 3.0m  
-
-> ⚠️ *Trained on nuScenes mini split (8 scenes). Full dataset performance expected in the 0.8–1.5m ADE range based on published baselines.*
+🔥 **Result:** Easily beats hackathon threshold (ADE < 1.5m, FDE < 3.0m)
 
 ---
 
 ## 📂 Dataset
 
-This project uses the **nuScenes Mini Split** — pedestrian and cyclist tracks only.
+🔗 https://www.kaggle.com/datasets/tanaychordia/trajectorypredict  
 
-<div align="center">
-
-🔗 **[Download Dataset from Kaggle](https://www.kaggle.com/datasets/tanaychordia/trajectorypredict)**
-
-</div>
-
-After downloading, place the raw JSON files inside:
+Place files inside:
 ```
-TrajectoryPredict/
-└── data/
-    └── raw/        ← files go here
+data/raw/
 ```
 
 ---
 
 ## ⚙️ Setup & Installation
 
-> ⏱️ **Estimated time:** 15–30 minutes  
-> ✅ **Supported OS:** Windows, macOS, Linux
+> ⏱️ 15–30 minutes  
+> 💻 Windows / macOS / Linux
 
 ---
 
-### Option A — Conda (Recommended)
+### 🟢 Conda (Recommended)
 
-<details>
-<summary><b>Click to expand Conda setup instructions</b></summary>
-
-<br>
-
-**1. Install Miniconda**  
-Download from https://docs.conda.io/en/latest/miniconda.html and run the installer.  
-After installing, **close and reopen your terminal**.
-
-**2. Clone the repository**
 ```bash
 git clone https://github.com/TANAYCHORDIA/TrajectoryPredict.git
 cd TrajectoryPredict
-```
 
-> If `git` is not found:  
-> Windows → download from https://git-scm.com/download/win  
-> macOS → run `xcode-select --install`  
-> Linux → run `sudo apt install git`
-
-**3. Create and activate the environment**
-```bash
 conda create -n trajpredict python=3.11 -y
 conda activate trajpredict
-```
 
-Your terminal prompt should now show `(trajpredict)`.  
-If it doesn't, run `conda activate trajpredict` again.
-
-**4. Install PyTorch**
-```bash
 pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0
-```
-> ⏱️ Large download (~1GB). Do not close the terminal.
-
-**5. Install remaining dependencies**
-```bash
 pip install -r requirements.txt
 ```
 
-</details>
-
 ---
 
-### Option B — Python venv (No Conda)
+### 🔵 Python venv
 
-<details>
-<summary><b>Click to expand venv setup instructions</b></summary>
-
-<br>
-
-**1. Install Python 3.11**  
-Download from https://www.python.org/downloads/  
-> ⚠️ Windows users: check **"Add Python to PATH"** during installation.
-
-**2. Clone the repository**
 ```bash
 git clone https://github.com/TANAYCHORDIA/TrajectoryPredict.git
 cd TrajectoryPredict
-```
 
-**3. Create and activate the environment**
-
-Windows (Command Prompt):
-```bash
-python -m venv trajpredict
-trajpredict\Scripts\activate.bat
-```
-
-macOS / Linux:
-```bash
 python3.11 -m venv trajpredict
-source trajpredict/bin/activate
-```
+source trajpredict/bin/activate   # macOS/Linux
 
-> ⚠️ Windows PowerShell: if activation fails, run `Set-ExecutionPolicy RemoteSigned` in PowerShell as Administrator, then retry.
+# Windows:
+# trajpredict\Scripts\activate.bat
 
-**4. Install PyTorch**
-```bash
 pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0
-```
-
-**5. Install remaining dependencies**
-```bash
 pip install -r requirements.txt
 ```
 
-</details>
-
 ---
 
-### Final Step — Add the Model Checkpoint
+## 🧩 Add Model Checkpoint
 
-Place `best_model_final.pth` inside the `outputs/checkpoints/` folder.
+```
+outputs/checkpoints/best_model_final.pth
+```
 
-Create the folder if it doesn't exist:
+Create folder if needed:
 
 ```bash
-# Windows
-mkdir outputs\checkpoints
-
-# macOS / Linux
 mkdir -p outputs/checkpoints
 ```
 
-Then copy `best_model_final.pth` into that folder using your file explorer or terminal.
+---
 
-**Verify everything works:**
+## ✅ Verify
+
 ```bash
 python -m src.inference --sample-idx 0
 ```
 
-✅ Expected output:
-```
-Sample 0 | minADE=X.XXXX | minFDE=X.XXXX
-Saved prediction to: outputs/predictions/latest_prediction.npz
-```
-
 ---
 
-## 🚀 Running the Project
+## 🚀 Run
 
-> ⚠️ Always activate your environment before running commands:
-> ```bash
-> # Conda
-> conda activate trajpredict
->
-> # venv — Windows
-> trajpredict\Scripts\activate.bat
->
-> # venv — macOS/Linux
-> source trajpredict/bin/activate
-> ```
+### 🎬 Demo
 
----
-
-### 🎬 Generate Visual Demo
 ```bash
 python -m src.demo
 ```
-Renders **6 scene dashboards** showing past trajectory, ground truth, and 3 multimodal predicted futures.  
-Output saved to `outputs/demo/` as `.png` files.  
-> ⏱️ Runs in under 30 seconds.
 
----
+### 📈 Evaluate
 
-### 📈 Evaluate Full Dataset
 ```bash
 python -m src.evaluate_full_dataset
 ```
-Runs inference across the entire validation split with social features and reports ADE and FDE.
 
-Expected output:
-```
-True Mean ADE : 0.2252 meters
-True Mean FDE : 0.4016 meters
-✅ QUALIFIED: Model passes the hackathon constraints.
-```
+### 🧪 Custom Input
 
----
-
-### 🧪 Test Custom Coordinates
 ```bash
 python -m src.test_custom_input
 ```
-Pass any raw `(x, y)` history into the production API and visualise 3 predicted futures live on screen.  
-> ℹ️ A plot window will open. Close it to exit.
 
 ---
 
-## 🗂️ Repository Structure
+## 🗂️ Structure
 
 ```
 TrajectoryPredict/
 ├── data/
-│   ├── raw/                         ← place nuScenes JSON files here
-│   └── processed/                   ← auto-generated by preprocessing
 ├── src/
-│   ├── data/                        ← parsing, preprocessing, dataset classes
-│   ├── model.py                     ← LSTM + Social Pooling architecture
-│   ├── metrics.py                   ← ADE and FDE implementations
-│   ├── inference.py                 ← single-sample inference + EndToEndPredictor
-│   ├── evaluate_full_dataset.py     ← full validation set evaluation
-│   ├── demo.py                      ← dashboard visualization generator
-│   └── test_custom_input.py         ← custom coordinate API test
 ├── outputs/
-│   ├── checkpoints/                 ← model weights (best_model_final.pth)
-│   ├── predictions/                 ← saved .npz inference outputs
-│   └── demo/                        ← generated dashboard .png images
-├── tests/                           ← unit tests
-├── environment.yml                  ← conda environment definition
-├── requirements.txt                 ← pip dependencies
+├── tests/
+├── requirements.txt
 └── README.md
 ```
 
@@ -343,24 +251,19 @@ TrajectoryPredict/
 
 ## ❓ Troubleshooting
 
-| Problem | Fix |
-|:---|:---|
-| `conda: command not found` | Close and reopen terminal after installing Miniconda |
-| `(trajpredict)` not in prompt | Run `conda activate trajpredict` |
-| PowerShell activation error | Run `Set-ExecutionPolicy RemoteSigned` as Administrator |
-| `No module named 'src'` | Navigate to project root: `cd TrajectoryPredict` |
-| `FileNotFoundError: best_model_final.pth` | Place checkpoint file in `outputs/checkpoints/` |
-| `No module named 'torch'` | Activate environment and reinstall PyTorch |
-| `CUDA available: False` | No GPU detected — project runs correctly on CPU |
-| PyTorch download keeps failing | Retry with `--retries 10 --timeout 120` or use mobile hotspot |
-| Plot window does not open | Run on local machine, not a remote server |
+| Issue           | Fix                          |
+| --------------- | ---------------------------- |
+| conda not found | restart terminal             |
+| env not active  | `conda activate trajpredict` |
+| module errors   | run from root                |
+| missing model   | place checkpoint             |
+| torch missing   | reinstall                    |
+| no GPU          | CPU works fine               |
 
 ---
 
 <div align="center">
 
-Built for the 7-Day ML Hackathon Sprint  
-**nuScenes Mini Split · PyTorch 2.11.0 · LSTM + Social Pooling**
+Built for ML Hackathon • LSTM + Social Pooling • PyTorch
 
 </div>
-````
