@@ -70,7 +70,7 @@ pip install -r requirements.txt
 
 **1. Generate Visual Demo**
 
-Runs inference on 5 curated scenes and renders dashboards showing past trajectory, ground truth, and 3 multimodal predictions.
+Runs inference on 6 curated scenes and renders dashboards showing past trajectory, ground truth, and 3 multimodal predictions.
 ```bash
 python -m src.demo
 ```

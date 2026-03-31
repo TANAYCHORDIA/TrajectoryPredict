@@ -22,7 +22,7 @@ def _load_checkpoint(model: torch.nn.Module, checkpoint_path: Path, device: torc
 
 
 def evaluate_full_dataset(
-	checkpoint_path: str = "outputs/checkpoints/best_model_social.pth",
+	checkpoint_path: str = "outputs/checkpoints/best_model_final.pth",
 	data_dir: str = "data/processed",
 	split: str = "val",
 ) -> int:
@@ -100,7 +100,7 @@ def _parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--checkpoint",
 		type=str,
-		default="outputs/checkpoints/best_model_social.pth",
+		default="outputs/checkpoints/best_model_final.pth",
 		help="Path to model checkpoint (.pth).",
 	)
 	parser.add_argument(
