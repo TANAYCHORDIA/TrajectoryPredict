@@ -86,12 +86,15 @@ def plot_trajectories(
     min_fde: float,
 ) -> None:
     plot_path.parent.mkdir(parents=True, exist_ok=True)
+    obs_endpoint = obs[-1:, :2]
+    gt_plot = np.concatenate([obs_endpoint, gt], axis=0)
+    preds_plot = [np.concatenate([obs_endpoint, pred], axis=0) for pred in preds]
 
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(obs[:, 0], obs[:, 1], marker="o", linewidth=2, label="Observed")
-    ax.plot(gt[:, 0], gt[:, 1], marker="o", linewidth=2, label="Ground truth")
+    ax.plot(gt_plot[:, 0], gt_plot[:, 1], marker="o", linewidth=2, label="Ground truth")
 
-    for mode_idx, pred in enumerate(preds):
+    for mode_idx, pred in enumerate(preds_plot):
         ax.plot(
             pred[:, 0],
             pred[:, 1],
